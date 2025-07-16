@@ -1,12 +1,12 @@
 import os
 
 
-base_dir = 'F:\projects\OpenImages'
+base_dir = r'F:\projects\OpenImages'
 
-icdar17_mlt_img_dir = './OCR/train_data/train_img/'
-icdar17_mlt_gt_dir = './OCR/train_data/train_label/'
+icdar17_mlt_img_dir = r'F:\projects\OpenImages\OCR\train_data\train_img'
+icdar17_mlt_gt_dir = r'F:\projects\OpenImages\OCR\train_data\train_label'
 
-checkpoints_dir = 'F:\projects\OCR\checkpoints'
+checkpoints_dir = r'F:\projects\OCR\checkpoints'
 
 train_batch_size = 16
 test_batch_size = 16
@@ -18,6 +18,7 @@ resume_epoch = 0
 IOU_POSITIVE = 0.7
 IOU_NEGATIVE = 0.3
 RPN_FORE_NUM = 150
+
 
 
 

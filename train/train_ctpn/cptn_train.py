@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import torch
 from torch.utils.data import DataLoader
 from torch import optim
@@ -9,7 +9,7 @@ import config
 from data.dataset import ICDARDataset
 
 random_seed = 2025
-toch.random.manual_seed(random_seed)
+torch.random.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 epochs = 30

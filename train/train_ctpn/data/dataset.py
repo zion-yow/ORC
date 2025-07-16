@@ -39,17 +39,19 @@ def gen_anchors(feature_size, scale):
     xt = (base_anchors[:, 0] + base_anchors[:, 2]) / 2
     yt = (base_anchors[:, 1] + base_anchors[:, 3]) / 2
 
-    # x1, y1, x2, y2
+    # 10 base anchors, each has 4 coordinates x1, y1, x2, y2
     x1 = xt - widths / 2
     y1 = yt - heights / 2
     x2 = xt + widths / 2
     y2 = yt + heights / 2
     base_anchors = np.hstack((x1, y1, x2, y2))
     
+    # shift the base anchors to the feature map
     h, w = feature_size
     shift_x = np.arange(0, w*scale)
     shift_y = np.arange(0, h*scale)
 
+    # generate all anchors
     anchor = []
     for i in shift_y:
         for j in shift_x:
@@ -85,7 +87,7 @@ def cal_overlap(base_anchors, gtboxes):
 
 def bbox_transform(base_anchors, gtboxes):
     # bbox is the distance between anchor and gtbox at the edge
-    
+
 
 
 def cal_rpn(img_size, feature_size, stride, gtboxes):
@@ -145,7 +147,7 @@ def cal_rpn(img_size, feature_size, stride, gtboxes):
 
     return [labels, bbox_targets], base_anchors
 
-class ICDARDataset(Dataset):
+class ICDARDataset():
     def __init__(self, img_dir, gt_dir):
         self.img_dir = img_dir
         self.gt_dir = gt_dir
