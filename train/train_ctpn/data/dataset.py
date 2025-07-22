@@ -139,8 +139,8 @@ def bbox_transform(base_anchors, gtboxes):
     
     # 计算回归目标
     # dx, dy: 中心点的相对偏移（归一化到anchor的宽高）
-    dx = (gt_ctr_x - anchor_ctr_x) #/ anchor_widths
-    dy = (gt_ctr_y - anchor_ctr_y) #/ anchor_heights
+    dx = np.log(gt_widths / anchor_widths)
+    dy = np.log(gt_heights / anchor_heights)
     
     # dw, dh: 宽高的对数缩放比例
     # dw = np.log(gt_widths / anchor_widths)
@@ -242,64 +242,83 @@ class ICDARDataset():
         
     def __getitem__(self, index):
         """根据索引返回一个样本"""
-        try:
-            img_name = self.img_list[index]
-            img_path = os.path.join(self.img_dir, img_name)
 
+        img_name = self.img_list[index]
+        img_path = os.path.join(self.img_dir, img_name)
+
+        img = cv2.imread(img_path)
+
+        if img is None:
+            print(img_path)
+            with open('error_img.txt', 'a') as f:
+                f.write('{}\n'.format(img_path))
+            img_name = 'img_4929.jpg'
+            img_path = os.path.join(self.img_dir, img_name)
             img = cv2.imread(img_path)
 
-            if img is None:
-                print(img_path)
-                with open('error_img.txt', 'a') as f:
-                    f.write('{}\n'.format(img_path))
-                img_name = 'img_4929.jpg'
-                img_path = os.path.join(self.img_dir, img_name)
-                img = cv2.imread(img_path)
+        h, w, c = img.shape
+        # 缩放图片至1600
+        rescale_fac = max(h, w) / 1600
+        if rescale_fac > 1:
+            h = int(h/rescale_fac)
+            w = int(w/rescale_fac)
+            img = cv2.resize(img, (w, h))
 
-            h, w, c = img.shape
-            # 缩放图片至1600
-            rescale_fac = max(h, w) / 1600
-            if rescale_fac > 1:
-                h = int(h/rescale_fac)
-                w = int(w/rescale_fac)
-                img = cv2.resize(img, (w, h))
+        # 读取标注文件
+        gt_path = os.path.join(self.gt_dir, 'gt_'+img_name)
+        gtbox = self.parse_gtfile(gt_path, rescale_fac)
 
-            # 读取标注文件
-            
-            try:
-                gt_path = os.path.join(self.gt_dir, ('gt_'+img_name).replace('.png', '.txt'))
-                gtbox = self.parse_gtfile(gt_path, rescale_fac)
-            except FileNotFoundError:
-                gt_path = os.path.join(self.gt_dir, ('gt_'+img_name).replace('.jpg', '.txt'))
-                gtbox = self.parse_gtfile(gt_path, rescale_fac)
-            
-            # 生成RPN标签
-            [cls, regr], base_anchors = cal_rpn(
-                (h, w),
-                (int(h/16), int(w/16)),
-                16,
-                gtbox
-                )
-            
-            # 
-            m_img = img - [123.68, 116.78, 103.94]
-            # print('cls.shape: ', cls.shape)
-            # print('cls: ', cls)
-            # print('regr.shape: ', regr.shape)
-            # print('regr: ', regr)
-            regr = np.hstack([cls.reshape(cls.shape[0], 1), regr])
-            cls = np.expand_dims(cls, axis=0)
+        # 水平翻转
+        rd = np.random.random()
+        if rd < 0.3:
+            # 水平翻转, 參數1
+            img = cv2.flip(img, 1)
+            newx1 = w - gtbox[:, 2] - 1
+            newx2 = w - gtbox[:, 0] - 1
+            gtbox[:, 0] = newx1
+            gtbox[:, 2] = newx2
 
-            # transform to tensor
-            # img = torch.from_numpy(img.transpose([2, 0, 1])).float()
-            m_img = torch.from_numpy(m_img.transpose([2, 0, 1])).float()
-            regr = torch.from_numpy(regr).float()
-            cls = torch.from_numpy(cls).float()
+        # 垂直翻转
+        if rd > 0.3 and rd < 0.6:
+            # 垂直翻转, 參數0
+            img = cv2.flip(img, 0)
+            newy1 = h - gtbox[:, 3] - 1
+            newy2 = h - gtbox[:, 1] - 1
+            gtbox[:, 1] = newy1
+            gtbox[:, 3] = newy2
+        
+        # # 旋轉
+        # if rd > 0.4 and rd < 0.6:
+        #     angle = np.random.randint(-10, 10)
+        #     # 旋轉矩陣
+        #     M = cv2.getRotationMatrix2D((w/2, h/2), angle, 1)
+        #     # 旋轉圖片
+        #     img = cv2.warpAffine(img, M, (w, h))
+        #     # 旋轉gtbox
+        #     gtbox = cv2.transform(gtbox.reshape(1, -1, 2), M).reshape(-1, 2)
 
-            return m_img, cls, regr
-        except Exception as e:
-            print(e)
-            return None, None, None
+
+        # 生成RPN标签
+        [cls, regr], base_anchors = cal_rpn(
+            (h, w),
+            (int(h/16), int(w/16)),
+            16,
+            gtbox
+            )
+
+        m_img = img - [123.68, 116.78, 103.94]
+
+        regr = np.hstack([cls.reshape(cls.shape[0], 1), regr])
+        cls = np.expand_dims(cls, axis=0)
+
+        # transform to tensor
+        # img = torch.from_numpy(img.transpose([2, 0, 1])).float()
+        m_img = torch.from_numpy(m_img.transpose([2, 0, 1])).float()
+        regr = torch.from_numpy(regr).float()
+        cls = torch.from_numpy(cls).float()
+
+        return m_img, cls, regr
+
     
     def box_transfer_v2(self, coor_lists, rescale_fac = 1.0):
         gtboxes = []
@@ -329,6 +348,8 @@ class ICDARDataset():
                 gt_path = gt_path.replace('.jpg', '.txt')
             if '.png' in gt_path:
                 gt_path = gt_path.replace('.png', '.txt')
+            if '.gif' in gt_path:
+                gt_path = gt_path.replace('.gif', '.txt')
 
             print('rescale_fac: ', rescale_fac)
             print('gt_path: ', gt_path)

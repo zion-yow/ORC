@@ -10,12 +10,12 @@ from data.dataset import ICDARDataset
 import config
 import visdom
 
-random_seed = 2019
+random_seed = 2025
 torch.random.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 epochs = 80
-lr = 1e-3
+lr = 2e-3
 resume_epoch = 0
 
 
@@ -72,9 +72,11 @@ if __name__ == '__main__':
 
     viz = visdom.Visdom(env='ctpn-train', port=8097)
     n_iter = 0
+    # 一個epoch相當於把所有樣本都過一遍
     for epoch in range(resume_epoch+1, epochs):
         print('Epoch {}/{}'.format(epoch, epochs))
-        epoch_size = len(dataset) // 1
+        # epoch_size等於數據集的樣本數，因為batch_size=1
+        epoch_size = len(dataset)
         model.train()
         epoch_loss_cls = 0
         epoch_loss_regr = 0
@@ -84,10 +86,8 @@ if __name__ == '__main__':
             print('lr: %s'% param_group['lr'])
         print('#'*80)
 
+        # dataloader會遍歷整個數據集，每個樣本都會被訓練一次
         for batch_i, (imgs, clss, regrs) in enumerate(dataloader):
-            if imgs is None:
-                print('imgs is None')
-                continue
             since = time.time()
             imgs = imgs.to(device)
             clss = clss.to(device)
