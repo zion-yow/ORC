@@ -24,13 +24,20 @@ class RPN_REGR_Loss(nn.Module):
     
     def forward(self, input, target):
         try:
+            # 因爲target是(batch, nums_of_anchor, 3)，所以target[0, :, 0]是第0維的第0個元素，即cls
             cls = target[0, :, 0]
             regression = target[0, :, 1:3]
             regr_keep = (cls == 1).nonzero()[:, 0]
             regr_true = regression[regr_keep]
+
+            # 因爲input是(batch, nums_of_anchor, 2)，所以input[0]是第0維的第0個元素，即regr
             regr_pred = input[0][regr_keep]
             diff = torch.abs(regr_true - regr_pred)
+
+            # 計算loss
             less_one = (diff<1.0/self.sigma).float()
+            # 誤差大的時候，loss = |x| - 0.5/sigma
+            # 誤差小的時候，loss = 0.5*sigma*|x|**2, 對異常值敏感
             loss = less_one * 0.5 * diff ** 2 * self.sigma + torch.abs(1- less_one) * (diff - 0.5/self.sigma)
             loss = torch.sum(loss, 1)
             loss = torch.mean(loss) if loss.numel() > 0 else torch.tensor(0.0)
@@ -60,23 +67,38 @@ class RPN_CLS_Loss(nn.Module):
             num_pos = 0
             loss_pos_sum = 0
 
+            # 如果正樣本數量不為0，則計算正樣本的損失
             if len((cls_gt == 1).nonzero()) != 0: 
+                # 獲取正樣本的索引
                 cls_pos = (cls_gt == 1).nonzero()[:, 0]
+                # 獲取正樣本的標籤
                 gt_pos = cls_gt[cls_pos].long()
+                # 獲取正樣本的預測分數
                 cls_pred_pos = input[0][cls_pos]
+                # 計算正樣本的損失
                 loss_pos = self.L_cls(cls_pred_pos.view(-1, 2), gt_pos.view(-1))
                 loss_pos_sum = loss_pos.sum()
                 num_pos = len(loss_pos)
 
+            # 獲取負樣本的索引
             cls_neg = (cls_gt == 0).nonzero()[:, 0]
+            # 獲取負樣本的標籤
             gt_neg = cls_gt[cls_neg].long()
+            # 獲取負樣本的預測分數
             cls_pred_neg = input[0][cls_neg]
 
+            # 計算負樣本的損失
             loss_neg = self.L_cls(cls_pred_neg.view(-1, 2), gt_neg.view(-1))
+            
             loss_neg_topK, _ = torch.topk(loss_neg, min(len(loss_neg), config.RPN_TOTAL_NUM - num_pos))
             loss_cls = loss_pos_sum + loss_neg_topK.sum()
             loss_cls = loss_cls / config.RPN_TOTAL_NUM
 
+            print('num_pos:', num_pos, 'num_neg:', len(cls_neg))
+            # print('loss_neg_topK:', loss_neg_topK)
+            # print('cls_pred_pos:', cls_pred_pos)
+            # print('cls_pred_neg:', cls_pred_neg)
+        
             return loss_cls.to(self.device)
         else:
             y_true = target[0][0]
@@ -121,49 +143,33 @@ class CTPN_Model(nn.Module):
 
 
     def forward(self, x):
-        # print('1: ', x.size())
         x = self.base_layers(x)
-        # print('2: ', x.size())
         x = self.rpn(x)
-        # print('3: ', x.size())
         # permute會改變tensor的維度順序，這裏x.permute(0, 2, 1)是把x的第2和第3個維度交換
         x1 = x.permute(0, 2, 3, 1)
-        # print('4: ', x1.size())
 
         b = x1.size()
         # .view的功能是重新排列tensor的形狀，這裡將x1從(b[0], b[1], b[2], b[3])變成(b[0]*b[1], b[2], b[3])
         x1 = x1.view(b[0]*b[1], b[2], b[3])
-        # print('5: ', x1.size())
 
         x2, _ = self.brnn(x1)
-        # print('6: ', x2.size())
 
         xsz = x.size()
         x3 = x2.view(xsz[0], xsz[2], xsz[3], 256)
-        # print('7: ', x3.size())
 
         # contiguous() 的作用是返回一個內存連續的tensor副本，這在某些操作（如view）之後是必需的
         x3 = x3.permute(0, 3, 1, 2).contiguous()
-        # print('8: ', x3.size())
-
         x3 = self.lstm_fc(x3)
-        # print('9: ', x3.size())
-        
         x = x3
-        cls = self.rpn_class(x)
-        # print('10: ', cls.size())
 
+        cls = self.rpn_class(x)
         regr = self.rpn_regress(x)
-        # print('11: ', regr.size())
 
         cls = cls.permute(0, 2, 3, 1).contiguous()
         regr = regr.permute(0, 2, 3, 1).contiguous()
 
         cls = cls.view(cls.size(0), cls.size(1)*cls.size(2)*10, 2)
-        # print('12: ', cls.size())
-
         regr = regr.view(regr.size(0), regr.size(1)*regr.size(2)*10, 2)
-        # print('13: ', regr.size())
 
         return cls, regr
 

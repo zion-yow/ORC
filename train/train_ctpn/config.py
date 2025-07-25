@@ -1,5 +1,3 @@
-import os
-
 
 base_dir = r'F:\projects\OpenImages'
 
@@ -7,7 +5,7 @@ icdar17_mlt_img_dir = r'F:\projects\OpenImages\OCR\train_data\train_img'
 icdar17_mlt_gt_dir = r'F:\projects\OpenImages\OCR\train_data\train_label'
 
 checkpoints_dir = r'F:\projects\OCR\checkpoints'
-pretrained_weights = ''
+pretrained_weights = './checkpoints/ctpn.pth'
 
 train_batch_size = 16
 test_batch_size = 16
