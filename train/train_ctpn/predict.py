@@ -16,7 +16,7 @@ model.eval()
 
 def get_text_boxes(image, prob_thresh=0.5, display=True):
     h, w= image.shape[:2]
-    rescale_fac = max(h, w) / 1600
+    rescale_fac = max(h, w) / 1000
     if rescale_fac > 1.0:
         h = int(h / rescale_fac)
         w = int(w / rescale_fac)

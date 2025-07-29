@@ -23,7 +23,6 @@ def gen_anchors(feature_size, scale):
     shift_y = np.arange(0, h)*scale
     # 基礎anchor
     base_anchors = np.array([0,0,15,15])
-
     # 基礎anchor的中心點坐標
     xt = (base_anchors[0] + base_anchors[2]) / 2
     yt = (base_anchors[1] + base_anchors[3]) / 2
@@ -96,7 +95,7 @@ def cal_overlap(base_anchors, gtboxes):
         # 计算并集面积
         union = anchor_areas + gt_area - intersection
         # 计算IOU，避免除零
-        overlaps[:, k] = intersection / (union + 1e-6)
+        overlaps[:, k] = intersection / (union)
     
     return overlaps
 
@@ -116,11 +115,11 @@ def bbox_transform(base_anchors, gtboxes):
     # 从边界坐标计算中心点坐标和宽高
     # Anchor boxes的中心点和宽高
     anchor_yt = (base_anchors[:, 3] + base_anchors[:, 1]) / 2
-    anchor_ht = base_anchors[:, 3] - base_anchors[:, 1]
+    anchor_ht = base_anchors[:, 3] - base_anchors[:, 1] + 1
     
     # Ground truth boxes的中心点和宽高
     gt_yt = (gtboxes[:, 3] + gtboxes[:, 1]) / 2
-    gt_ht = gtboxes[:, 3] - gtboxes[:, 1]
+    gt_ht = gtboxes[:, 3] - gtboxes[:, 1] + 1
     
     # 计算回归目标
     dy = (gt_yt - anchor_yt) / anchor_ht
@@ -291,7 +290,7 @@ class ICDARDataset():
         h, w, c = img.shape
 
         # 缩放图片至1600
-        rescale_fac = max(h, w) / 1600
+        rescale_fac = max(h, w) / 1000
         if rescale_fac > 1:
             h = int(h/rescale_fac)
             w = int(w/rescale_fac)

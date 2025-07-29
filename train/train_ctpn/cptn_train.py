@@ -14,10 +14,10 @@ random_seed = 1
 torch.random.manual_seed(random_seed)
 np.random.seed(random_seed)
 
-epochs = 80
+epochs = 20
 lr = 1e-3
 # 已經訓練過幾個epoch
-resume_epoch = 0
+resume_epoch = 59
 
 
 def save_checkpoint(state, epoch, loss_cls, loss_regr, loss, ext='pth'):
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         print('using pretrained weight: {}'.format(checkpoints_weight))
         cc = torch.load(checkpoints_weight, map_location=device)
         model.load_state_dict(cc['model_state_dict'])
-        resume_epoch = cc['epoch']
+        # resume_epoch = cc['epoch']
     else:
         model.apply(weights_init)
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     best_loss_regr = 100
     best_loss = 100
     best_model = None
-    epochs += resume_epoch
+    # epochs += resume_epoch
 
     viz = visdom.Visdom(env='ctpn-train', port=8097)
 
@@ -75,6 +75,7 @@ if __name__ == '__main__':
         n_iter = 0
     else:
         n_iter = resume_epoch * len(dataset)
+    print('************************************n_iter: ', n_iter)
 
     # 一個epoch相當於把所有樣本都過一遍
     
@@ -125,10 +126,11 @@ if __name__ == '__main__':
             n_iter += 1
 
             print('time:{}'.format(time.time() - since))
-            print(  'EPOCH:{}/{}--BATCH:{}/{}\n'.format(epoch, epochs + resume_epoch, batch_i, epoch_size),
+            print(  'EPOCH:{}/{}--BATCH:{}/{}\n'.format(epoch+ resume_epoch, epochs + resume_epoch, batch_i, epoch_size),
                     'batch: loss_cls:{:.4f}--loss_regr:{:.4f}--loss:{:.4f}\n'.format(loss_cls.item(), loss_regr.item(), loss.item()),
                     'epoch: loss_cls:{:.4f}--loss_regr:{:.4f}--loss:{:.4f}\n'.format(epoch_loss_cls/mmp, epoch_loss_regr/mmp, epoch_loss/mmp)
                 )
+            print('************************************n_iter//100: ', n_iter//100)
             if mmp % 100 == 0:
                 viz.line(Y=np.array([epoch_loss_cls/mmp]), X=np.array([n_iter//100]), 
                                     update='append', win='loss_cls', opts={'title':'loss_cls'})

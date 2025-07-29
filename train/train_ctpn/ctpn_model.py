@@ -118,6 +118,7 @@ class basic_conv(nn.Module):
         super(basic_conv, self).__init__()
         self.out_channels = out_planes
         self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        # 這裡的bn是batch normalization，用於加速訓練和穩定模型
         self.bn = nn.BatchNorm2d(out_planes, eps=1e-5, momentum=0.01, affine=True) if bn else None
         self.relu = nn.ReLU(inplace=True) if relu else None
 
@@ -137,7 +138,7 @@ class CTPN_Model(nn.Module):
         self.base_layers = nn.Sequential(*layers)
         self.rpn = basic_conv(512, 512, 3, 1, 1, bn=False)
         self.brnn = nn.GRU(512, 128, bidirectional=True, batch_first=True)
-        self.lstm_fc = basic_conv(128 * 2, 512, 1, 1, relu=True, bn=True)
+        self.lstm_fc = basic_conv(128 * 2, 512, 1, 1, relu=True, bn=False)
         self.rpn_class = basic_conv(512, 10 * 2, 1, 1, relu=False, bn=False)
         self.rpn_regress = basic_conv(512, 10 * 2, 1, 1, relu=False, bn=False)
 
@@ -159,16 +160,19 @@ class CTPN_Model(nn.Module):
 
         # contiguous() 的作用是返回一個內存連續的tensor副本，這在某些操作（如view）之後是必需的
         x3 = x3.permute(0, 3, 1, 2).contiguous()
-        x3 = self.lstm_fc(x3)
-        x = x3
 
+        x3 = self.lstm_fc(x3)
+        
+        x = x3
         cls = self.rpn_class(x)
+
         regr = self.rpn_regress(x)
 
         cls = cls.permute(0, 2, 3, 1).contiguous()
         regr = regr.permute(0, 2, 3, 1).contiguous()
 
         cls = cls.view(cls.size(0), cls.size(1)*cls.size(2)*10, 2)
+
         regr = regr.view(regr.size(0), regr.size(1)*regr.size(2)*10, 2)
 
         return cls, regr

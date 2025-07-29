@@ -45,6 +45,6 @@ config.ini
 # Custom files to ignore (add your specific files or folders here)
 # example_file.txt
 log_cul_simulation_*/ 
-train/train_ctpn/checkpoints/
+checkpoints/
 
 
