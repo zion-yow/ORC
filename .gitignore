@@ -1,0 +1,50 @@
+# Python bytecode
+# __pycache__/
+# *.py[cod]
+# *$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Large data files
+*.csv
+*.xlsx
+*.parquet
+*.h5
+*.pkl
+
+# Log files
+*.log
+
+# Sensitive files (add your specific files here)
+credentials.json
+config.ini
+.env
+
+# Custom files to ignore (add your specific files or folders here)
+# example_file.txt
+log_cul_simulation_*/ 
+train/train_ctpn/checkpoints/
+
+
