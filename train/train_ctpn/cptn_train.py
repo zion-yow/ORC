@@ -10,14 +10,14 @@ from data.dataset import ICDARDataset
 import config
 import visdom
 
-random_seed = 1
+random_seed = 5
 torch.random.manual_seed(random_seed)
 np.random.seed(random_seed)
 
-epochs = 20
+epochs = 60
 lr = 1e-3
 # 已經訓練過幾個epoch
-resume_epoch = 59
+resume_epoch = 0
 
 
 def save_checkpoint(state, epoch, loss_cls, loss_regr, loss, ext='pth'):
@@ -58,7 +58,19 @@ if __name__ == '__main__':
         model.apply(weights_init)
 
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [35, 55, 70, 90, 120], gamma=0.1, last_epoch=-1)
+
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [35, 55, 70, 90, 100], gamma=0.1, last_epoch=-1)
+
+    # 使用ReduceLROnPlateau來監控loss，如果loss在若干epoch內沒有明顯下降，則自動調整學習率
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, 
+    #     mode='min', 
+    #     factor=0.5, 
+    #     patience=2, 
+    #     verbose=True, 
+    #     threshold=1e-4, 
+    #     min_lr=1e-6
+    # )
 
     critetion_cls = RPN_CLS_Loss(device)
     critetion_regr = RPN_REGR_Loss(device)

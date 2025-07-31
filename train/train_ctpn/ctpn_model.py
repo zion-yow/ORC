@@ -63,6 +63,11 @@ class RPN_CLS_Loss(nn.Module):
 
     def forward(self, input, target):
         if config.OHEM:
+            
+            # 這裏應該是取出所有 anchor 的標籤 (cls)，target 形狀是 (batch, nums_of_anchor, 3)
+            # target[0, :, 0] 代表第0個 batch 的所有 anchor 的分類標籤+
+            print('target:', target)
+            print('target.shape:', target.shape)
             cls_gt = target[0][0]
             num_pos = 0
             loss_pos_sum = 0
@@ -89,8 +94,10 @@ class RPN_CLS_Loss(nn.Module):
 
             # 計算負樣本的損失
             loss_neg = self.L_cls(cls_pred_neg.view(-1, 2), gt_neg.view(-1))
-            
-            loss_neg_topK, _ = torch.topk(loss_neg, min(len(loss_neg), config.RPN_TOTAL_NUM - num_pos))
+            # torch.topk的作用是從損失中選出最大的K個，這裡是選出損失最大的負樣本（最難分的負樣本），用於OHEM（Online Hard Example Mining）
+            # 這樣可以讓模型更關注難以分類的負樣本，提高訓練效果
+            K = min(len(loss_neg), config.RPN_TOTAL_NUM - num_pos)
+            loss_neg_topK, _ = torch.topk(loss_neg, K)
             loss_cls = loss_pos_sum + loss_neg_topK.sum()
             loss_cls = loss_cls / config.RPN_TOTAL_NUM
 

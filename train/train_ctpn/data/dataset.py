@@ -159,6 +159,8 @@ def cal_rpn(img_size, feature_size, scale, gtboxes):
     labels[anchor_max_overlaps >= config.IOU_POSITIVE] = 1
     # 如果anchor与gtbox的iou < IOU_NEGATIVE, label = 0
     labels[anchor_max_overlaps < config.IOU_NEGATIVE] = 0
+
+    print(f'正樣本數比例: {len(np.where(labels == 1)[0])}, 負樣本比例: {len(np.where(labels == 0)[0])}, 忽略樣本比例: {len(np.where(labels == -1)[0])}')
     
     # 检查anchor是否在图像之外
     outside_anchor = np.where(
@@ -168,13 +170,7 @@ def cal_rpn(img_size, feature_size, scale, gtboxes):
         (base_anchors[:, 3] > h)
     )[0]
     labels[outside_anchor] = -1
-
-    # 打印正負樣本和忽略樣本的數量
-    num_pos = np.sum(labels == 1)
-    num_neg = np.sum(labels == 0)
-    num_ign = np.sum(labels == -1)
-    print(f'正樣本數比例: {num_pos/len(labels)}, 負樣本比例: {num_neg/len(labels)}, 忽略樣本比例: {num_ign/len(labels)}')
-
+    
     # 如果前景anchor数量大于RPN_FORE_NUM(默认128), 则随机选择RPN_FORE_NUM个前景anchor
     fg_index = np.where(labels == 1)[0]
     if len(fg_index) > config.RPN_FORE_NUM:
@@ -184,8 +180,18 @@ def cal_rpn(img_size, feature_size, scale, gtboxes):
     # 這裏沒有報錯是因為 anchor_argmax_overlaps 是每個 anchor 對應的最大 iou 的 gtbox 索引
     # 所以 gtboxes[anchor_argmax_overlaps, :] 會返回一個 (75000, 4) 的數組
 
+    bg_index = np.where(labels == 0)[0]
+    num_bg = config.RPN_TOTAL_NUM - np.sum(labels == 1)
+    if (len(bg_index) > num_bg):
+        # print('bgindex:',len(bg_index),'num_bg',num_bg)
+        labels[np.random.choice(bg_index, max(len(bg_index) - num_bg, len(bg_index) - 150), replace=False)] = -1
+
+    print(f'正樣本數比例: {len(np.where(labels == 1)[0])}, 負樣本比例: {len(np.where(labels == 0)[0])}, 忽略樣本比例: {len(np.where(labels == -1)[0])}')
+
+
+    
     # 每個 anchor 都有一個對應的 gtbox 坐標
-    print('gtboxes[anchor_argmax_overlaps, :].shape: ', gtboxes[anchor_argmax_overlaps, :].shape)
+    # print('gtboxes[anchor_argmax_overlaps, :].shape: ', gtboxes[anchor_argmax_overlaps, :].shape)
     bbox_targets = bbox_transform(base_anchors, gtboxes[anchor_argmax_overlaps, :])
 
     return [labels, bbox_targets], base_anchors
@@ -236,7 +242,7 @@ def filter_bbox(bbox, minsize):
     keep = np.where((ws >= minsize) & (hs >= minsize))[0]
     return keep
 
-# 非極大值抑制
+
 def nms(dets, thresh):
     x1 = dets[:, 0]
     y1 = dets[:, 1]
@@ -246,11 +252,14 @@ def nms(dets, thresh):
 
     areas = (x2 - x1 + 1) * (y2 - y1 + 1)
     order = scores.argsort()[::-1]
+    print('order: ', order)
 
     keep = []
     while order.size > 0:
+        # 選擇分數最高的bbox
         i = order[0]
         keep.append(i)
+        # 選擇分數最高的bbox和其他bbox的交集
         xx1 = np.maximum(x1[i], x1[order[1:]])
         yy1 = np.maximum(y1[i], y1[order[1:]])
         xx2 = np.minimum(x2[i], x2[order[1:]])
@@ -259,9 +268,13 @@ def nms(dets, thresh):
         w = np.maximum(0.0, xx2 - xx1 + 1)
         h = np.maximum(0.0, yy2 - yy1 + 1)
         inter = w * h
+        # 計算交集與面積的比值
         ovr = inter / (areas[i] + areas[order[1:]] - inter)
 
+        # 選擇交集小於閾值的bbox，並將其索引+1
         inds = np.where(ovr <= thresh)[0]
+
+        # 這裏+1是因爲inds是基於order[1:]的索引，所以要映射回原始order的索引需要+1
         order = order[inds + 1]
     return keep
 
@@ -304,12 +317,7 @@ class ICDARDataset():
 
         # 將gtbox的每個頂點坐標標簽依次連接, 變成一個矩形框, 並繪製出來
         gtbox = np.array(gtbox)
-        # for i in range(gtbox.shape[0]):
-        #     cv2.rectangle(img, (int(gtbox[i, 0]), int(gtbox[i, 1])), (int(gtbox[i, 2]), int(gtbox[i, 3])), (0, 0, 255), 2)
-        # cv2.imwrite('gtbox.jpg', img)
-        # cv2.imshow('gtbox', img)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        
 
         # 水平翻转
         rd = np.random.random()
@@ -321,15 +329,6 @@ class ICDARDataset():
             gtbox[:, 0] = newx1
             gtbox[:, 2] = newx2
 
-        # # 垂直翻转
-        # if rd > 0.3 and rd < 0.6:
-        #     # 垂直翻转, 參數0
-        #     img = cv2.flip(img, 0)
-        #     newy1 = h - gtbox[:, 3] - 1
-        #     newy2 = h - gtbox[:, 1] - 1
-        #     gtbox[:, 1] = newy1
-        #     gtbox[:, 3] = newy2
-
         # 生成RPN标签
         [cls, regr], base_anchors = cal_rpn(
             (h, w),
@@ -337,6 +336,23 @@ class ICDARDataset():
             16,
             gtbox
             )
+        
+        #
+        # 把regr轉換成三維張量, 第一維為長度為1
+        # _regr = np.expand_dims(regr, axis=0)
+        # post_bbox = transform_bbox(base_anchors, _regr)
+        # post_bbox = clip_box(post_bbox, (h, w))
+        # post_bbox = post_bbox[np.where(cls == 1)[0]]
+        # keep_index = filter_bbox(post_bbox, 16)
+        # post_bbox = post_bbox[keep_index]
+
+
+        # for i in range(post_bbox.shape[0]):
+        #     cv2.rectangle(img, (int(post_bbox[i, 0]), int(post_bbox[i, 1])), (int(post_bbox[i, 2]), int(post_bbox[i, 3])), (0, 0, 255), 2)
+        # cv2.imwrite(f'post_cls_{index}.jpg', img)
+        # cv2.imshow(f'post_cls_{index}', img)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
         m_img = img - [123.68, 116.78, 103.94]
 
@@ -403,11 +419,262 @@ class ICDARDataset():
 
 
         return gtbox
-
-
-    
     
 
+class TextLineCfg:
+    SCALE = 600
+    MAX_SCALE = 1200
+    TEXT_PROPOSALS_WIDTH = 16
+    MIN_NUM_PROPOSALS = 2
+    MIN_RATIO = 0.5
+    LINE_MIN_SCORE = 0.9
+    TEXT_PROPOSALS_MIN_SCORE = 0.7
+    TEXT_PROPOSALS_NMS_THRESH = 0.3
+    MAX_HORIZONTAL_GAP = 60
+    MIN_V_OVERLAPS = 0.6
+    MIN_SIZE_SIM = 0.6
+
+'''
+基于图的文本行构造算法
+子图连接规则，根据图中配对的文本框生成文本行
+1、遍历 graph 的行和列，寻找列全为false、行不全为false的行和列，索引号为index 
+2、找到 graph 的第 index 行中为true的那项的索引号，加入子图中，并将索引号迭代给index
+3、重复步骤2，直到 graph 的第 index 行全部为false
+4、重复步骤1、2、3，遍历完graph
+返回文本行list[文本框索引]
+'''
+class Graph:
+    def __init__(self, graph):
+        self.graph = graph
+
+    def sub_graphs_connected(self):
+        sub_graphs = []
+        for index in range(self.graph.shape[0]):
+            if not self.graph[:, index].any() and self.graph[index, :].any():
+                v = index
+                sub_graphs.append([v])
+                while self.graph[v, :].any():
+                    v = np.where(self.graph[v, :])[0][0]
+                    sub_graphs[-1].append(v)
+
+        return sub_graphs    
+    
+class TextProposalGraphBuilder:
+    '''
+    构建配对的文本框
+    '''
+    def get_successions(self, index):
+        '''
+        遍历[x0, x0+MAX_HORIZONTAL_GAP]
+        获取指定索引号的后继文本框
+        '''
+        box = self.text_proposals[index]
+        results = []
+        for left in range(int(box[0]) + 1, min(int(box[0]) + TextLineCfg.MAX_HORIZONTAL_GAP + 1, self.im_size[1])):
+            adj_box_indices = self.boxes_table[left]
+            for adj_box_index in adj_box_indices:
+                if self.meet_v_iou(adj_box_index, index):
+                    results.append(adj_box_index)
+            if len(results) != 0:
+                return results
+
+        return results
+
+    def get_precursors(self, index):
+        '''
+        遍历[x0-MAX_HORIZONTAL_GAP， x0]
+        获取指定索引号的前驱文本框
+        '''
+        box = self.text_proposals[index]
+        results = []
+        for left in range(int(box[0]) - 1, max(int(box[0] - TextLineCfg.MAX_HORIZONTAL_GAP), 0) - 1, -1):
+            adj_box_indices = self.boxes_table[left]
+            for adj_box_index in adj_box_indices:
+                if self.meet_v_iou(adj_box_index, index):
+                    results.append(adj_box_index)
+            if len(results) != 0:
+                return results
+
+        return results
+
+    def is_succession_node(self, index, succession_index):
+        '''
+        判断是否是配对的文本框
+        '''
+        precursors = self.get_precursors(succession_index)
+        if self.scores[index] >= np.max(self.scores[precursors]):
+            return True
+
+        return False
+
+    def meet_v_iou(self, index1, index2):
+        '''
+        判断两个文本框是否满足垂直方向的iou条件
+        overlaps_v: 文本框垂直方向的iou计算。 iou_v = inv_y/min(h1, h2)
+        size_similarity: 文本框在垂直方向的高度尺寸相似度。 sim = min(h1, h2)/max(h1, h2)
+        '''
+        def overlaps_v(index1, index2):
+            h1 = self.heights[index1]
+            h2 = self.heights[index2]
+            y0 = max(self.text_proposals[index2][1], self.text_proposals[index1][1])
+            y1 = min(self.text_proposals[index2][3], self.text_proposals[index1][3])
+            return max(0, y1 - y0 + 1) / min(h1, h2)
+
+        def size_similarity(index1, index2):
+            h1 = self.heights[index1]
+            h2 = self.heights[index2]
+            return min(h1, h2) / max(h1, h2)
+
+        return overlaps_v(index1, index2) >= TextLineCfg.MIN_V_OVERLAPS and \
+                size_similarity(index1, index2) >= TextLineCfg.MIN_SIZE_SIM
+
+    def build_graph(self, text_proposals, scores, im_size):
+        '''
+        根据文本框构建文本框对
+        self.heights: 所有文本框的高度
+        self.boxes_table: 将文本框根据左上点的x1坐标进行分组
+        graph: bool类型的[n, n]数组，表示两个文本框是否配对，n为文本框的个数
+            (1) 获取当前文本框Bi的后继文本框
+            (2) 选取后继文本框中得分最高的，记为Bj
+            (3) 获取Bj的前驱文本框
+            (4) 如果Bj的前驱文本框中得分最高的恰好是 Bi，则<Bi, Bj>构成文本框对
+        '''
+        self.text_proposals = text_proposals
+        self.scores = scores
+        self.im_size = im_size
+        self.heights = text_proposals[:, 3] - text_proposals[:, 1] + 1
+
+        boxes_table = [[] for _ in range(self.im_size[1])]
+        for index, box in enumerate(text_proposals):
+            boxes_table[int(box[0])].append(index)
+        self.boxes_table = boxes_table
+
+        graph = np.zeros((text_proposals.shape[0], text_proposals.shape[0]), np.bool)
+
+        for index, box in enumerate(text_proposals):
+            successions = self.get_successions(index)
+            if len(successions) == 0:
+                continue
+            succession_index = successions[np.argmax(scores[successions])]
+            if self.is_succession_node(index, succession_index):
+                graph[index, succession_index] = True
+
+        return Graph(graph)
+
+
+class TextProposalConnectorOriented:
+    """
+    连接文本框，构建文本行bbox
+    """
+
+    def __init__(self):
+        self.graph_builder = TextProposalGraphBuilder()
+
+    def group_text_proposals(self, text_proposals, scores, im_size):
+        '''
+        将文本框连接起来，按文本行分组
+        '''
+        graph = self.graph_builder.build_graph(text_proposals, scores, im_size)
+        
+        return graph.sub_graphs_connected()
+
+    def fit_y(self, X, Y, x1, x2):
+        '''
+        一元线性函数拟合X，Y，返回y1, y2的坐标值
+        '''
+        if np.sum(X == X[0]) == len(X):
+            return Y[0], Y[0]
+        p = np.poly1d(np.polyfit(X, Y, 1))
+        return p(x1), p(x2)
+
+    def get_text_lines(self, text_proposals, scores, im_size):
+        '''
+        根据文本框，构建文本行
+        1、将文本框划分成文本行组，每个文本行组内包含符合规则的文本框
+        2、处理每个文本行组，将其串成一个大的文本行
+            (1) 获取文本行组内的所有文本框 text_line_boxes
+            (2) 求取每个组内每个文本框的中心坐标 (X, Y)，最小、最大宽度坐标值 (x0 ,x1)
+            (3) 拟合所有中心点直线 z1
+            (4) 设置offset为文本框宽度的一半
+            (5) 拟合组内所有文本框的左上角点直线，并返回当x取 (x0+offset, x1-offset)时的极作极右y坐标 （lt_y, rt_y）
+            (6) 拟合组内所有文本框的左下角点直线，并返回当x取 (x0+offset, x1-offset)时的极作极右y坐标 （lb_y, rb_y）
+            (7) 取文本行组内所有框的评分的均值，作为该文本行的分数
+            (8) 生成文本行基本数据
+        3、生成大文本框
+        '''
+        tp_groups = self.group_text_proposals(text_proposals, scores, im_size) 
+        
+        text_lines = np.zeros((len(tp_groups), 8), np.float32)
+        for index, tp_indices in enumerate(tp_groups):
+            text_line_boxes = text_proposals[list(tp_indices)]
+
+            X = (text_line_boxes[:, 0] + text_line_boxes[:, 2]) / 2
+            Y = (text_line_boxes[:, 1] + text_line_boxes[:, 3]) / 2
+            x0 = np.min(text_line_boxes[:, 0])
+            x1 = np.max(text_line_boxes[:, 2])
+
+            z1 = np.polyfit(X, Y, 1) 
+
+            offset = (text_line_boxes[0, 2] - text_line_boxes[0, 0]) * 0.5 
+
+            lt_y, rt_y = self.fit_y(text_line_boxes[:, 0], text_line_boxes[:, 1], x0 + offset, x1 - offset)
+            lb_y, rb_y = self.fit_y(text_line_boxes[:, 0], text_line_boxes[:, 3], x0 + offset, x1 - offset)
+
+            score = scores[list(tp_indices)].sum() / float(len(tp_indices))
+
+            text_lines[index, 0] = x0
+            text_lines[index, 1] = min(lt_y, rt_y)  # 文本行上端 线段 的y坐标的小值
+            text_lines[index, 2] = x1
+            text_lines[index, 3] = max(lb_y, rb_y)  # 文本行下端 线段 的y坐标的大值
+            text_lines[index, 4] = score  # 文本行得分
+            text_lines[index, 5] = z1[0]  # 根据中心点拟合的直线的k，b
+            text_lines[index, 6] = z1[1]
+            height = np.mean((text_line_boxes[:, 3] - text_line_boxes[:, 1]))  # 小框平均高度
+            text_lines[index, 7] = height + 2.5
+
+        text_recs = np.zeros((len(text_lines), 9))
+        index = 0
+        for line in text_lines:
+            b1 = line[6] - line[7] / 2  # 根据高度和文本行中心线，求取文本行上下两条线的b值
+            b2 = line[6] + line[7] / 2
+            x1 = line[0]
+            y1 = line[5] * line[0] + b1  # 左上
+            x2 = line[2]
+            y2 = line[5] * line[2] + b1  # 右上
+            x3 = line[0]
+            y3 = line[5] * line[0] + b2  # 左下
+            x4 = line[2]
+            y4 = line[5] * line[2] + b2  # 右下
+            disX = x2 - x1
+            disY = y2 - y1
+            width = np.sqrt(disX * disX + disY * disY)  # 文本行宽度
+
+            fTmp0 = y3 - y1  # 文本行高度
+            fTmp1 = fTmp0 * disY / width
+            x = np.fabs(fTmp1 * disX / width)  # 做补偿
+            y = np.fabs(fTmp1 * disY / width)
+            if line[5] < 0:
+                x1 -= x
+                y1 += y
+                x4 += x
+                y4 -= y
+            else:
+                x2 += x
+                y2 += y
+                x3 -= x
+                y3 -= y
+            text_recs[index, 0] = x1
+            text_recs[index, 1] = y1
+            text_recs[index, 2] = x2
+            text_recs[index, 3] = y2
+            text_recs[index, 4] = x3
+            text_recs[index, 5] = y3
+            text_recs[index, 6] = x4
+            text_recs[index, 7] = y4
+            text_recs[index, 8] = line[4]
+            index = index + 1
+
+        return text_recs
 
 
 

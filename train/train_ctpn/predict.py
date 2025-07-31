@@ -14,7 +14,7 @@ model.load_state_dict(torch.load(weights, map_location=device)['model_state_dict
 model.eval()
 
 
-def get_text_boxes(image, prob_thresh=0.5, display=True):
+def get_text_boxes(image, prob_thresh=0.7, display=True):
     h, w= image.shape[:2]
     rescale_fac = max(h, w) / 1000
     if rescale_fac > 1.0:
@@ -28,22 +28,16 @@ def get_text_boxes(image, prob_thresh=0.5, display=True):
 
     with torch.no_grad():
         cls, regr = model(image)
-        # print('cls: ', cls)
-        # print('regr: ', regr)
         cls_prob = F.softmax(cls, dim=-1).cpu().numpy()
         regr = regr.cpu().numpy()
-
-
         anchors = gen_anchors((int(h / 16), int(w / 16)), 16)
-
         # 偏移bbox
         bbox = transform_bbox(anchors, regr)
         bbox= clip_box(bbox, (h, w))
 
-        fg = np.where(cls_prob[0, :, 0] > prob_thresh)[0]
-
+        fg = np.where(cls_prob[0, :, 1] > prob_thresh)[0]
         print('cls_prob: ', cls_prob)
-        print('正樣本數量: ', np.sum(cls_prob[0, :, 0] > prob_thresh))
+        print('正樣本數量: ', np.sum(cls_prob[0, :, 1] > prob_thresh))
         print('fg: ', fg)
 
         print('bbox.shape: ', bbox.shape)
@@ -52,13 +46,8 @@ def get_text_boxes(image, prob_thresh=0.5, display=True):
 
         select_anchor = bbox[fg, :]
         select_score = cls_prob[0, fg, 1]
+
         select_anchor = select_anchor.astype(np.int32)
-
-        # print('select_anchor.shape: ', select_anchor.shape)
-        # print('select_anchor: ', select_anchor)
-        # print('select_score.shape: ', select_score.shape)
-        # print('select_score: ', select_score)
-
         keep_index = filter_bbox(select_anchor, 16)
 
         select_anchor = select_anchor[keep_index]
@@ -72,6 +61,7 @@ def get_text_boxes(image, prob_thresh=0.5, display=True):
         
 
         if display:
+            print('len(select_anchor): ', len(select_anchor))
             for i in select_anchor:
                 # s = str(round(i[-1] * 100, 2)) + '%'
                 # i = [int(j) for j in i]
