@@ -17,7 +17,7 @@ np.random.seed(random_seed)
 epochs = 60
 lr = 1e-3
 # 已經訓練過幾個epoch
-resume_epoch = 0
+resume_epoch = 15
 
 
 def save_checkpoint(state, epoch, loss_cls, loss_regr, loss, ext='pth'):
@@ -59,7 +59,7 @@ if __name__ == '__main__':
 
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [35, 55, 70, 90, 100], gamma=0.1, last_epoch=-1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [20, 35, 50, 60], gamma=0.1, last_epoch=-1)
 
     # 使用ReduceLROnPlateau來監控loss，如果loss在若干epoch內沒有明顯下降，則自動調整學習率
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
